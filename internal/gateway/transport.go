@@ -337,8 +337,10 @@ func (g *Gateway) upstream(raw []byte, port uint16, account, users string) (stri
 func buildResponse(status string, hdr http.Header, body []byte) []byte {
 	var b bytes.Buffer
 	b.WriteString("HTTP/1.1 " + status + "\r\n")
+	// Date is dropped: the console's second HTTP stack (the XSTS client) parses it
+	// strictly and runs it through SystemTimeToFileTime, none of the services needs it.
 	hdr.WriteSubset(&b, map[string]bool{"Connection": true, "Content-Length": true, "Transfer-Encoding": true,
-		"Keep-Alive": true, "Proxy-Connection": true, "Upgrade": true, "Trailer": true})
+		"Keep-Alive": true, "Proxy-Connection": true, "Upgrade": true, "Trailer": true, "Date": true})
 	b.WriteString("Content-Length: " + strconv.Itoa(len(body)) + "\r\nConnection: close\r\n")
 	total := b.Len() + 2 + len(body)
 	if k := -total & 3; k != 0 {
