@@ -23,8 +23,8 @@ import (
 	"sync"
 	"time"
 
-	"openpak/x360-kdc/internal/kdc"
-	"openpak/x360-kdc/internal/rc4hmac"
+	"github.com/openpak/x360-common/kdc"
+	"github.com/openpak/x360-common/rc4hmac"
 )
 
 // Message types the gateway itself acts on.

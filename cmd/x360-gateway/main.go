@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"openpak/x360-kdc/internal/accountcore"
-	"openpak/x360-kdc/internal/config"
-	"openpak/x360-kdc/internal/gateway"
-	"openpak/x360-kdc/internal/kdc"
-	"openpak/x360-kdc/internal/rc4hmac"
+	"github.com/openpak/x360-common/accountcore"
+	"github.com/openpak/x360-common/config"
+	"github.com/openpak/x360-common/kdc"
+	"github.com/openpak/x360-common/rc4hmac"
+	"github.com/openpak/x360-gateway/internal/gateway"
 )
 
 func main() {

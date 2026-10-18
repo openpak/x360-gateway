@@ -12,9 +12,9 @@ import (
 	"slices"
 	"time"
 
-	"openpak/x360-kdc/internal/der"
-	"openpak/x360-kdc/internal/kdc"
-	"openpak/x360-kdc/internal/rc4hmac"
+	"github.com/openpak/x360-common/der"
+	"github.com/openpak/x360-common/kdc"
+	"github.com/openpak/x360-common/rc4hmac"
 )
 
 // Chunk kinds of the initiation (client to gateway) and reply.

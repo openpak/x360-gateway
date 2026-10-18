@@ -10,8 +10,7 @@ Wants=network-online.target
 
 [Container]
 ContainerName=openpak-x360-gateway
-Image=ghcr.io/openpak/x360-kdc:latest
-Entrypoint=/usr/local/bin/x360-gateway
+Image=ghcr.io/openpak/x360-gateway:latest
 AutoUpdate=registry
 Network=host
 ReadOnly=true

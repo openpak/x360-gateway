@@ -15,7 +15,7 @@ import (
 	"log/slog"
 	"time"
 
-	"openpak/x360-kdc/internal/kdc"
+	"github.com/openpak/x360-common/kdc"
 )
 
 // PresenceNamespace is the core namespace of Xbox 360 presence; every

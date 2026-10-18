@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"openpak/x360-kdc/internal/kdc"
+	"github.com/openpak/x360-common/kdc"
 )
 
 type fakePresence struct {

@@ -14,7 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"openpak/x360-kdc/internal/kdc"
+	"github.com/openpak/x360-common/kdc"
+	"github.com/openpak/x360-common/wire"
 )
 
 // Service transport: XAM runs a TCP connection inside the secure channel
@@ -30,12 +31,12 @@ const (
 	maxResponse = 4 << 20
 )
 
-// AccountHeader carries the session's console account to the service backend.
-const AccountHeader = "X-X360-Account"
-
-// UsersHeader lists the users signed in on the tunnel's ticket as
-// "<online xuid hex>:<OpenPak account id>" separated by commas.
-const UsersHeader = "X-X360-Users"
+// AccountHeader and UsersHeader are the headers the session's console account and
+// signed-in users travel in to the service backend (see x360-common/wire).
+const (
+	AccountHeader = wire.AccountHeader
+	UsersHeader   = wire.UsersHeader
+)
 
 func usersHeader(users []kdc.TicketUser) string {
 	var parts []string
