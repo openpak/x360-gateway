@@ -86,7 +86,9 @@ type Gateway struct {
 	// ServiceURLs overrides ServiceURL per destination port of the tunnelled
 	// connection (the service id's port in the D7 record); other ports use ServiceURL.
 	ServiceURLs map[uint16]string
-	HTTP        *http.Client // default: 10 s timeout, no redirects
+	// GatewayKey is sent as wire.GatewayKeyHeader to the backends (empty: none).
+	GatewayKey string
+	HTTP       *http.Client // default: 10 s timeout, no redirects
 
 	mu       sync.Mutex
 	sessions map[netip.AddrPort]*Session

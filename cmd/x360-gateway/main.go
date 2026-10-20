@@ -59,7 +59,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	log.Info("x360-gateway listening", "addr", conn.LocalAddr(), "accounts", store.Len(), "service_url", cfg.ServiceURL, "service_urls", cfg.ServiceURLs, "debug", cfg.Debug)
-	g := &gateway.Gateway{TicketKey: ticketKey, AccountsPath: cfg.Accounts, CA: ca, Now: time.Now, Log: log, ServiceURL: cfg.ServiceURL, ServiceURLs: cfg.ServiceURLs}
+	g := &gateway.Gateway{TicketKey: ticketKey, AccountsPath: cfg.Accounts, CA: ca, Now: time.Now, Log: log, ServiceURL: cfg.ServiceURL, ServiceURLs: cfg.ServiceURLs, GatewayKey: os.Getenv("X360_GATEWAY_KEY")}
 	// Presence: users signed in on a live session are online in the account
 	// core (namespace xbox360). The core URL/token are the KDC's (same env file).
 	if u, tok := os.Getenv("X360_KDC_ACCOUNT_CORE_URL"), os.Getenv("X360_KDC_ACCOUNT_CORE_TOKEN"); u != "" && tok != "" {

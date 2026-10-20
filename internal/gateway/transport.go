@@ -307,6 +307,10 @@ func (g *Gateway) upstream(raw []byte, port uint16, account, users string) (stri
 	// that need to know it (xuacs enrolment). A client-sent value is replaced.
 	out.Header.Del(AccountHeader)
 	out.Header.Del(UsersHeader)
+	out.Header.Del(wire.GatewayKeyHeader)
+	if g.GatewayKey != "" {
+		out.Header.Set(wire.GatewayKeyHeader, g.GatewayKey)
+	}
 	if account != "" {
 		out.Header.Set(AccountHeader, account)
 	}
