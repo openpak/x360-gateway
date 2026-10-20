@@ -59,6 +59,7 @@ type Handler func(s *Session, m Message) ([]Message, error)
 // Session is one authenticated client.
 type Session struct {
 	Client    netip.AddrPort
+	Kind      string           // core client label of the console, "" = real console
 	Account   string           // "<digits>@xbox.com"
 	Users     []kdc.TicketUser // signed-in users the ticket carries
 	ClientSPI []byte           // carried by server-to-client packets
@@ -188,7 +189,7 @@ func (g *Gateway) initiate(data []byte, src netip.AddrPort, now time.Time) ([]by
 	if g.sessions == nil {
 		g.sessions = map[netip.AddrPort]*Session{}
 	}
-	g.sessions[src] = &Session{Client: src, Account: v.name, Users: v.users, ClientSPI: append([]byte{}, in.clientSPI...),
+	g.sessions[src] = &Session{Client: src, Kind: v.client, Account: v.name, Users: v.users, ClientSPI: append([]byte{}, in.clientSPI...),
 		ServerSPI: p.spi, c2s: c2s, s2c: s2c, expires: now.Add(SessionTTL), lastSeen: now}
 	g.log().Info("authenticated", "src", src, "account", v.name, "chunks", fmt.Sprintf("%#x", in.chunks),
 		"client_spi", hex.EncodeToString(in.clientSPI), "server_spi", hex.EncodeToString(p.spi),

@@ -125,11 +125,12 @@ func parseInitiation(data []byte) (*initiation, error) {
 
 // verified is what a successfully verified initiation yields.
 type verified struct {
-	name  string           // account principal, "<digits>@xbox.com"
-	users []kdc.TicketUser // users signed in on the ticket (user logon), else none
-	key   []byte           // sg/S0 ticket session key
-	ctime der.TLV
-	cusec der.TLV
+	client string           // core client label of the console ("wharf"), "" = real console
+	name   string           // account principal, "<digits>@xbox.com"
+	users  []kdc.TicketUser // users signed in on the ticket (user logon), else none
+	key    []byte           // sg/S0 ticket session key
+	ctime  der.TLV
+	cusec  der.TLV
 }
 
 // verify checks the sg/S0 ticket (ours: usage 2 under the ticket key), the
@@ -269,7 +270,7 @@ func verify(in *initiation, ticketKey []byte, accounts *kdc.Store, ca *rsa.Publi
 	if v, ok := cf[1]; !ok || !hmac.Equal(v.Value, hmacSHA1(key, in.signed)) {
 		return nil, errors.New("SG initiation HMAC")
 	}
-	return &verified{name: id.Machine, users: id.Users, key: key, ctime: auth[5], cusec: cusec}, nil
+	return &verified{client: kdc.ConsoleClient(cert), name: id.Machine, users: id.Users, key: key, ctime: auth[5], cusec: cusec}, nil
 }
 
 // rc4hmacUsageAPAuth / rc4hmacUsageAPRep are the AP-REQ authenticator (11)

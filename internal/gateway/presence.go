@@ -33,6 +33,7 @@ type PresenceCore interface {
 type OnlineUser struct {
 	kdc.TicketUser
 	Console string // "<digits>@xbox.com"
+	Kind    string // core client label of the console, "" = real console
 }
 
 // OnlineUsers lists the users of sessions that are live and heard from within idle.
@@ -49,7 +50,7 @@ func (g *Gateway) OnlineUsers(idle time.Duration) []OnlineUser {
 		for _, u := range s.Users {
 			if !seen[u.XUID] {
 				seen[u.XUID] = true
-				out = append(out, OnlineUser{TicketUser: u, Console: s.Account})
+				out = append(out, OnlineUser{TicketUser: u, Console: s.Account, Kind: s.Kind})
 			}
 		}
 	}
@@ -124,7 +125,11 @@ func (p *Presence) Tick(ctx context.Context) {
 			}
 			log.Info("presence lease lapsed, registering again", "xuid", fmt.Sprintf("%016x", u.XUID))
 		}
-		id, _, err := p.Core.RegisterSession(c, u.Account, PresenceNamespace, "", fmt.Sprintf("x360:%016x", u.XUID), lease, p.Client, "")
+		client := p.Client
+		if u.Kind != "" {
+			client = u.Kind
+		}
+		id, _, err := p.Core.RegisterSession(c, u.Account, PresenceNamespace, "", fmt.Sprintf("x360:%016x", u.XUID), lease, client, "")
 		cancel()
 		if err != nil {
 			log.Warn("presence register failed", "account", u.Account, "xuid", fmt.Sprintf("%016x", u.XUID), "err", err)
