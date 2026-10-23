@@ -3,7 +3,7 @@
 // sg/S0 ticket, and the secure-channel data packets that follow.
 //
 // Everything mirrors the clean-room oracle scratch/wharf/kdcstub/sg.py and
-// sg_data_check.py (docs/xbox360/wharf-base-plan.md, section "security
+// sg_data_check.py (internal research notes, section "security
 // gateway (UDP 3074) handshake, secure-channel data packets"). Any datagram
 // that fails a check is dropped without a reply and logged with the reason;
 // logs never carry key material.
