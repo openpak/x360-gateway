@@ -1,25 +1,41 @@
-# x360-gateway
+# Xbox 360 Gateway Server
 
-The Xbox 360 security gateway (SG): the secure channel the console opens after its ticket exchange (UDP 3074 behind
-an nft redirect to :13075). It terminates the channel, proxies the tunnelled TCP connections of the Live services to their HTTP
-backends, answers the user-logon ticket message and the service-26 notification stream, and publishes signed-in users as
-presence (namespace `xbox360`) in the OpenPak account core.
+OpenPak's Xbox 360 Gateway Server.
 
-Part of OpenPak's Xbox 360 stack: one repository and one image per service ([`x360-kdc`](../x360-kdc),
-[`x360-gateway`](../x360-gateway), [`x360-xuacs`](../x360-xuacs), [`x360-liveinfo`](../x360-liveinfo),
-[`x360-notice`](../x360-notice), [`x360-xexds`](../x360-xexds)) around the shared Go library
-[`x360-common`](../x360-common) (`replace` + committed `vendor/`; after changing x360-common run
-`go mod vendor` here and commit).
+| | |
+| --- | --- |
+| Network | Xbox 360 |
+| Role | Xbox 360 security gateway: terminates the secure channel, proxies Live service traffic, publishes presence |
+| Depends on | [`x360-common`](https://github.com/openpak/x360-common) |
+| Image | `ghcr.io/openpak/x360-gateway` |
+| Licence | AGPL-3.0-only |
 
+## What it serves
 
-## Configuration
+| Endpoint | What |
+| --- | --- |
+| Secure channel | UDP, opened by the console after its ticket exchange |
+| User-logon ticket, service-26 notifications | Answered on the secure channel |
+| Live service proxy | Tunnelled TCP connections, proxied to the HTTP backends of the Live services |
+| Presence | Signed-in users, published in the OpenPak account core (namespace `xbox360`) |
 
-Environment `X360_GATEWAY_*` (see `deploy/secondary/openpak-x360-gateway.container` and `x360-common/config`): `ADDR`, `TICKET_KEY`, `ACCOUNTS`, `CONSOLE_CA`, `SERVICE_URL(S)`, `DEBUG`, plus the account core URL/token for presence.
+## Run
+
+The live quadlet is in `deploy/secondary/`. Details are in [Deploy](docs/deploy.md).
 
 ## Build and test
 
-`TMPDIR=<scratch> X360_KDC_TESTKEYS=<dir with the dev keys> go test -mod=vendor ./...`
+```sh
+TMPDIR=<scratch> X360_KDC_TESTKEYS=<dir with the dev keys> go test -mod=vendor ./...
+```
 
-Tag `vX.Y.Z` and CI publishes `ghcr.io/openpak/x360-gateway:latest` (amd64 + arm64); hosts auto-update `:latest`.
-`deploy/` holds the live quadlet and helpers. History before 2026-10-18 is the x360-kdc monorepo's, filtered to
-this service. Licensed AGPL-3.0, see LICENSE.
+## Docs
+
+- [Protocol](docs/protocol.md)
+- [Evidence](docs/evidence.md)
+- [Deploy](docs/deploy.md)
+- [Notes](docs/notes.md)
+
+## Licence
+
+AGPL-3.0-only. See [LICENSE](LICENSE).
