@@ -5,3 +5,7 @@
 
 - 2026-10-18: v0.9.1 the proxied response drops the Date header: the console's XSTS client (XHttp stack) parses Date
   strictly and converts it with SystemTimeToFileTime; the old xon clients never needed it.
+
+- 2026-11-01: v0.9.5 peer connections: the reply core carries the console's public IP:port (XNADDR inaOnline,
+  wPortOnline) and a per-session SGADDR (server SPI), and 0x1253 key-exchange/QoS packets are relayed to the
+  session whose SGADDR they name.
