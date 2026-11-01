@@ -30,3 +30,16 @@ use `ina`). For an online peer XAM also sends the key exchange through the gatew
 The receiver (`FUN_81754c38`) takes a 0x1253 only on its primary connection, longer than 0x2c bytes, and only if
 "SGADDR to" is its own SGADDR; it passes "from" on so it can answer the same way. The gateway relays a 0x1253 to the
 session whose SGADDR equals "to", with "from" overwritten by the sender's real SGADDR; unknown targets are dropped.
+
+## UDP (XAM 17559, static RE 2026-11-01)
+
+Data codes 4..6 are UDP: code = 4 + port mode (0: both ports 1000, 1: one byte each + 1000, 2: `u16` each,
+big-endian), the TCP datagram layout with a run of the ports alone (receive path `FUN_817551e0`):
+
+    SPI(4) | 3DES-CBC(payload | zero fill | run[:k]) | run[k:] | ctr low16 LE | ICV10,   k = min(pad, len(run))
+
+The ICV input is `run[k:] | ctr lo | ctr hi | SPI`, zero-filled to a multiple of 4 (the receiver writes the zeros
+itself), then the ciphertext. The only UDP XAM sends the gateway is arbitration (Live service 16, port 1000,
+`FUN_81917ab0`): a whole HTTP/1.0 request in one datagram. The gateway proxies it like a tunnelled TCP request and
+answers with the HTTP response in one code-6 datagram from port 1000; XAM looks only for `200 OK` and `X-Err:` in
+it. UDP to any other port is dropped.

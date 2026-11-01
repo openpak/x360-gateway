@@ -264,6 +264,9 @@ func (g *Gateway) data(pkt []byte, src netip.AddrPort, now time.Time) ([][]byte,
 	if isTCP(pkt) {
 		return g.tcpData(s, pkt, src, now)
 	}
+	if isUDP(pkt) {
+		return g.udpData(s, pkt, now)
+	}
 	spi, m, err := open(s.c2s, pkt)
 	if err != nil {
 		// The datagram is ciphertext; keeping it lets an undecodable shape be studied offline.

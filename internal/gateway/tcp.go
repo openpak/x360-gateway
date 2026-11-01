@@ -65,67 +65,87 @@ func isTCP(pkt []byte) bool {
 // sealTCP builds one code-3 datagram. spi is the 4-byte SPI; its first byte
 // is replaced by pad<<5|3. opts are TCP options (a multiple of 4 bytes).
 func sealTCP(d dirKeys, spi []byte, counter uint32, sg tcpSeg) []byte {
-	body := append(append([]byte{}, sg.Options...), sg.Payload...)
-	pad := -len(body) & 7
 	run := binary.BigEndian.AppendUint16(nil, sg.SrcPort)
 	run = binary.BigEndian.AppendUint16(run, sg.DstPort)
 	run = binary.BigEndian.AppendUint32(run, sg.Seq)
 	run = binary.BigEndian.AppendUint32(run, sg.Ack)
 	run = append(run, sg.Off, sg.Flags)
 	run = binary.BigEndian.AppendUint16(run, sg.Window)
-	pt := append(body, run[:pad]...)
+	return sealRun(d, spi, counter, codeTCP16, append(append([]byte{}, sg.Options...), sg.Payload...), run)
+}
+
+// sealRun builds a data datagram of the given code: body, then the run, whose
+// first min(pad, len(run)) bytes fill the end of the 3DES padding (any padding
+// beyond the run is zero) and the rest travels in the clear after ENC.
+func sealRun(d dirKeys, spi []byte, counter uint32, code byte, body, run []byte) []byte {
+	pad := -len(body) & 7
+	k := min(pad, len(run))
+	pt := append(append(append([]byte{}, body...), make([]byte, pad-k)...), run[:k]...)
 	ct, err := cbc(d.k, ivFor(d.seed, counter), pt, true)
 	if err != nil {
 		panic(err)
 	}
-	wspi := append([]byte{byte(pad<<5) | codeTCP16}, spi[1:4]...)
+	wspi := append([]byte{byte(pad<<5) | code}, spi[1:4]...)
 	pkt := append(append([]byte{}, wspi...), ct...)
-	pkt = append(pkt, run[pad:]...)
+	pkt = append(pkt, run[k:]...)
 	pkt = binary.LittleEndian.AppendUint16(pkt, uint16(counter))
-	return append(pkt, tcpMAC(d.hk, run[pad:], wspi, counter, ct)...)
+	return append(pkt, tcpMAC(d.hk, run[k:], wspi, counter, ct)...)
 }
 
 // openTCP verifies and decodes a code-3 datagram. hi is the assumed high 16
 // bits of the sender's 32-bit counter.
 func openTCP(d dirKeys, pkt []byte, hi uint16) (tcpSeg, error) {
 	var sg tcpSeg
-	if len(pkt) < 4+16+12-7 || pkt[0]&0x0f != codeTCP16 {
-		return sg, fmt.Errorf("not a code-3 packet (%d bytes, byte0 %#x)", len(pkt), pkt[0])
+	if len(pkt) < 4 || pkt[0]&0x0f != codeTCP16 {
+		return sg, fmt.Errorf("not a code-3 packet (%d bytes)", len(pkt))
 	}
-	pad := int(pkt[0]>>5) & 7
-	n := len(pkt)
-	plainLen := 16 - pad
-	e := n - 4 - plainLen - 12
-	if e < 0 || e%8 != 0 || pad > e {
-		return sg, fmt.Errorf("code-3 length %d with pad %d", n, pad)
+	run, body, ctr, err := openRun(d, pkt, hi, 16)
+	if err != nil {
+		return sg, err
 	}
-	spi, ct := pkt[:4], pkt[4:4+e]
-	plain := pkt[4+e : 4+e+plainLen]
-	lo := binary.LittleEndian.Uint16(pkt[n-12:])
-	ctr := uint32(hi)<<16 | uint32(lo)
-	if !hmac.Equal(pkt[n-10:], tcpMAC(d.hk, plain, spi, ctr, ct)) {
-		return sg, errors.New("code-3 ICV mismatch")
-	}
-	var dec []byte
-	if e > 0 {
-		var err error
-		if dec, err = cbc(d.k, ivFor(d.seed, ctr), ct, false); err != nil {
-			return sg, err
-		}
-	}
-	run := append(append([]byte{}, dec[e-pad:]...), plain...)
 	sg.SrcPort = binary.BigEndian.Uint16(run[0:])
 	sg.DstPort = binary.BigEndian.Uint16(run[2:])
 	sg.Seq = binary.BigEndian.Uint32(run[4:])
 	sg.Ack = binary.BigEndian.Uint32(run[8:])
 	sg.Off, sg.Flags = run[12], run[13]
 	sg.Window = binary.BigEndian.Uint16(run[14:])
-	sg.Counter, sg.SPI = ctr, spi
-	body := dec[:e-pad]
+	sg.Counter, sg.SPI = ctr, pkt[:4]
 	opt := int(sg.Off>>4)*4 - 20
 	if opt < 0 || opt > len(body) {
 		return sg, fmt.Errorf("code-3 data offset %#x with %d body bytes", sg.Off, len(body))
 	}
 	sg.Options, sg.Payload = body[:opt], body[opt:]
 	return sg, nil
+}
+
+// openRun verifies and decrypts a data datagram whose run is runLen bytes
+// (sealRun's layout; XAM receive path FUN_817551e0).
+func openRun(d dirKeys, pkt []byte, hi uint16, runLen int) (run, body []byte, ctr uint32, err error) {
+	pad := int(pkt[0]>>5) & 7
+	k := min(pad, runLen)
+	n := len(pkt)
+	plainLen := runLen - k
+	e := n - 4 - plainLen - 12
+	if e < 0 || e%8 != 0 || pad > e {
+		return nil, nil, 0, fmt.Errorf("code-%d length %d with pad %d", pkt[0]&0x0f, n, pad)
+	}
+	spi, ct := pkt[:4], pkt[4:4+e]
+	plain := pkt[4+e : 4+e+plainLen]
+	lo := binary.LittleEndian.Uint16(pkt[n-12:])
+	ctr = uint32(hi)<<16 | uint32(lo)
+	if !hmac.Equal(pkt[n-10:], tcpMAC(d.hk, plain, spi, ctr, ct)) {
+		return nil, nil, 0, fmt.Errorf("code-%d ICV mismatch", pkt[0]&0x0f)
+	}
+	var dec []byte
+	if e > 0 {
+		if dec, err = cbc(d.k, ivFor(d.seed, ctr), ct, false); err != nil {
+			return nil, nil, 0, err
+		}
+	}
+	for _, b := range dec[e-pad : e-k] {
+		if b != 0 {
+			return nil, nil, 0, errors.New("non-zero padding")
+		}
+	}
+	return append(append([]byte{}, dec[e-k:]...), plain...), dec[:e-pad], ctr, nil
 }
