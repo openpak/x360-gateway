@@ -28,9 +28,9 @@ func (s *Server) Serve(ctx context.Context, conn *net.UDPConn) error {
 			}
 			return err
 		}
-		for _, reply := range s.Gateway.Handle(buf[:n], src) {
-			if _, err := conn.WriteToUDPAddrPort(reply, src); err != nil {
-				s.Log.Warn("reply failed", "src", src, "err", err)
+		for _, d := range s.Gateway.HandleAll(buf[:n], src) {
+			if _, err := conn.WriteToUDPAddrPort(d.Data, d.To); err != nil {
+				s.Log.Warn("send failed", "to", d.To, "err", err)
 			}
 		}
 	}

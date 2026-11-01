@@ -309,7 +309,7 @@ type replyParams struct {
 
 // reply builds the answer datagram and returns it with the key material:
 // 4 zero bytes, 0x5803 core, 0x5880 DH public, 0x5887 record, 0x5883 AP-REP.
-func (in *initiation) reply(v *verified, client netip.Addr, p replyParams) (datagram, material []byte, err error) {
+func (in *initiation) reply(v *verified, client netip.AddrPort, p replyParams) (datagram, material []byte, err error) {
 	shared := leBytes(new(big.Int).Exp(leInt(in.public), p.private, dhPrime), dhLen)
 	public := leBytes(new(big.Int).Exp(big.NewInt(2), p.private, dhPrime), dhLen)
 	material = keyMaterial(v.key, shared, in.cnonce, p.snonce)
@@ -321,8 +321,16 @@ func (in *initiation) reply(v *verified, client netip.Addr, p replyParams) (data
 	copy(core[8:12], p.spi)
 	copy(core[12:20], in.cnonce)
 	copy(core[20:28], p.snonce)
-	ip := client.As4()
+	// [28:48] is the console's SGADDR (XNADDR abOnline: ina, spi, xbox id, reserved) and
+	// [48:54] its public address as this gateway sees it (XNADDR inaOnline, wPortOnline
+	// big-endian): XAM FUN_81752af8 copies them to the primary connection +0xcc/+0xe0/+0xe4.
+	// Peers reach the console directly at [48:54] and through the gateway by its SGADDR
+	// (0x1253 relay), so the server SPI in [32:36] makes the SGADDR unique per session.
+	ip := client.Addr().As4()
 	copy(core[28:32], ip[:])
+	copy(core[32:36], p.spi)
+	copy(core[48:52], ip[:])
+	binary.BigEndian.PutUint16(core[52:], client.Port())
 	binary.LittleEndian.PutUint16(core[54:], lifetimeA)
 	binary.LittleEndian.PutUint16(core[56:], lifetimeB)
 	tail, err := cbc(s2c.k, p.snonce, core[28:60], true)

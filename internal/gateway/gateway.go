@@ -36,6 +36,7 @@ const (
 	TypeTicket    = 0x0553 // new ticket for the session after a user logon (token u64 at +4, AP-REQ at +12)
 	TypeTicketAck = 0x0653 // its acknowledgement: the 8-byte token echoed
 	TypeChallenge = 0x0A53 // challenge result; any authenticated reply moves XAM's gateway state 5 -> 6
+	TypeRelay     = 0x1253 // peer packet for another console: SGADDR from, SGADDR to, XNet key exchange / QoS probe
 )
 
 // SessionTTL is the idle lifetime of a session: twice the 300 in the reply
@@ -64,6 +65,7 @@ type Session struct {
 	Users     []kdc.TicketUser // signed-in users the ticket carries
 	ClientSPI []byte           // carried by server-to-client packets
 	ServerSPI []byte           // first byte 0; the client sends it with 0x80 ORed into the first byte
+	SGAddr    [20]byte         // the console's SGADDR as sent in the reply core [28:48]
 	c2s, s2c  dirKeys
 	sendCtr   uint32 // last server-to-client counter used; starts at 0, first packet is 1
 	lastRecv  uint32
@@ -93,6 +95,13 @@ type Gateway struct {
 
 	mu       sync.Mutex
 	sessions map[netip.AddrPort]*Session
+	outbox   []Datagram // datagrams for other sessions produced while handling one (relay)
+}
+
+// Datagram is a packet for a given client.
+type Datagram struct {
+	To   netip.AddrPort
+	Data []byte
 }
 
 // DefaultHandlers is what the oracle does: 0x0A53 is answered with an empty
@@ -133,11 +142,32 @@ func (g *Gateway) Sessions() int {
 }
 
 // Handle processes one datagram and returns the datagrams to send back to
-// src (none on rejection or for messages that need no answer).
+// src (none on rejection or for messages that need no answer). Datagrams for
+// other clients (relayed peer packets) are dropped; servers use HandleAll.
 func (g *Gateway) Handle(data []byte, src netip.AddrPort) [][]byte {
+	var out [][]byte
+	for _, d := range g.HandleAll(data, src) {
+		if d.To == netip.AddrPortFrom(src.Addr().Unmap(), src.Port()) {
+			out = append(out, d.Data)
+		}
+	}
+	return out
+}
+
+// HandleAll is Handle plus the datagrams the message produced for other clients.
+func (g *Gateway) HandleAll(data []byte, src netip.AddrPort) []Datagram {
 	src = netip.AddrPortFrom(src.Addr().Unmap(), src.Port())
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	g.outbox = nil
+	var all []Datagram
+	for _, d := range g.handle(data, src) {
+		all = append(all, Datagram{src, d})
+	}
+	return append(all, g.outbox...)
+}
+
+func (g *Gateway) handle(data []byte, src netip.AddrPort) [][]byte {
 	now := g.now()
 	for k, s := range g.sessions {
 		if now.After(s.expires) {
@@ -181,7 +211,7 @@ func (g *Gateway) initiate(data []byte, src netip.AddrPort, now time.Time) ([]by
 	if err != nil {
 		return nil, err
 	}
-	reply, material, err := in.reply(v, src.Addr(), p)
+	reply, material, err := in.reply(v, src, p)
 	if err != nil {
 		return nil, err
 	}
@@ -189,8 +219,12 @@ func (g *Gateway) initiate(data []byte, src netip.AddrPort, now time.Time) ([]by
 	if g.sessions == nil {
 		g.sessions = map[netip.AddrPort]*Session{}
 	}
-	g.sessions[src] = &Session{Client: src, Kind: v.client, Account: v.name, Users: v.users, ClientSPI: append([]byte{}, in.clientSPI...),
+	sess := &Session{Client: src, Kind: v.client, Account: v.name, Users: v.users, ClientSPI: append([]byte{}, in.clientSPI...),
 		ServerSPI: p.spi, c2s: c2s, s2c: s2c, expires: now.Add(SessionTTL), lastSeen: now}
+	ip := src.Addr().As4()
+	copy(sess.SGAddr[0:4], ip[:])
+	copy(sess.SGAddr[4:8], p.spi)
+	g.sessions[src] = sess
 	g.log().Info("authenticated", "src", src, "account", v.name, "chunks", fmt.Sprintf("%#x", in.chunks),
 		"client_spi", hex.EncodeToString(in.clientSPI), "server_spi", hex.EncodeToString(p.spi),
 		"len", len(data), "reply_len", len(reply))
@@ -256,6 +290,9 @@ func (g *Gateway) data(pkt []byte, src netip.AddrPort, now time.Time) ([][]byte,
 	}
 	if m.Type == TypeTicket {
 		return g.ticketMessage(s, src, m)
+	}
+	if m.Type == TypeRelay {
+		return nil, g.relay(s, Message{Type: m.Type, Counter: m.Counter, Body: m.Body})
 	}
 	handlers := g.Handlers
 	if handlers == nil {
@@ -424,4 +461,31 @@ func (g *Gateway) ticketUsers(apReq []byte) ([]kdc.TicketUser, error) {
 		return nil, err
 	}
 	return id.Users, nil
+}
+
+// relay forwards a 0x1253 to the session whose SGADDR is its target (XAM sends it
+// from FUN_81750878 for key exchange and FUN_81758238 for QoS probes; the receiver,
+// FUN_81754c38, takes it only when the target is its own SGADDR). The sender field
+// is overwritten with the sender's real SGADDR. Unknown targets are dropped.
+func (g *Gateway) relay(s *Session, m Message) error {
+	if len(m.Body) < 40 {
+		return fmt.Errorf("0x1253 body %d bytes", len(m.Body))
+	}
+	var to *Session
+	for _, t := range g.sessions {
+		if t != s && [20]byte(m.Body[20:40]) == t.SGAddr {
+			to = t
+			break
+		}
+	}
+	if to == nil {
+		g.log().Info("relay target not connected", "src", s.Client, "to", hex.EncodeToString(m.Body[20:40]))
+		return nil
+	}
+	body := append([]byte{}, m.Body...)
+	copy(body[0:20], s.SGAddr[:])
+	to.sendCtr++
+	g.outbox = append(g.outbox, Datagram{to.Client, seal(to.s2c, to.ClientSPI, to.sendCtr, TypeRelay, body)})
+	g.log().Info("relayed", "src", s.Client, "to", to.Client, "len", len(body))
+	return nil
 }

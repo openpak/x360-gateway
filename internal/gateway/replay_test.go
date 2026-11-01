@@ -267,7 +267,7 @@ func TestReplayReply(t *testing.T) {
 		s := c.session(t, dir)
 		in, v, _ := c.verify(t, dir)
 		saved, _ := c.file(t, dir, "rep-0012.bin")
-		client := netip.MustParseAddr("10.0.2.15")
+		client := netip.AddrPortFrom(netip.MustParseAddr("10.0.2.15"), 3074)
 		// The saved reply itself decodes with session.json (self-check of the decoder).
 		wantChunks := 4
 		if dir == "sg3" {
@@ -297,6 +297,10 @@ func TestReplayReply(t *testing.T) {
 		}
 		if !bytes.Equal(core[12:28], savedCore[12:28]) || !bytes.Equal(tail[26:30], savedTail[26:30]) || !bytes.Equal(tail[:4], []byte{10, 0, 2, 15}) {
 			t.Fatalf("%s: core/tail differ from the accepted reply\nours %x\nsaved %x", dir, tail, savedTail)
+		}
+		// SGADDR spi and the public address (XNADDR inaOnline, wPortOnline big-endian).
+		if !bytes.Equal(tail[4:8], params.spi) || !bytes.Equal(tail[20:26], []byte{10, 0, 2, 15, 0x0c, 0x02}) {
+			t.Fatalf("%s: SGADDR/public address in tail %x", dir, tail)
 		}
 		if shape := func(b []byte) string { return hex.EncodeToString(b[:4]) }; shape(rep) != shape(saved) {
 			t.Fatal("framing differs")
