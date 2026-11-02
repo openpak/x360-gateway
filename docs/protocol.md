@@ -5,7 +5,15 @@ an nft redirect to :13075). It terminates the channel, proxies the tunnelled TCP
 backends, answers the user-logon ticket message and the service-26 notification stream, and publishes signed-in users as
 presence (namespace `xbox360`) in the OpenPak account core.
 
-## Peer connections (XAM 17559, static RE 2026-11-01)
+## Public address
+
+XAM always dials UDP 3074 for the gateway: it ignores a port in an extended D7 entry for service 20. The 360
+secure-channel initiation cannot be told apart from an original-Xbox user-session initiation at fixed payload
+offsets (the first 12 payload bytes match), so a payload-matching redirect on a shared 3074 steals sessions from
+xb-gateway. The gateway therefore needs its own public IPv4 address (`X360_KDC_SG_ADDRESS` in the KDC points at it),
+redirected by destination address only.
+
+## Peer connections (XAM 17559, static RE)
 
 The 0x5803 reply core gives the console its online identity (XAM `FUN_81752af8` copies it to the primary SG
 connection):
@@ -16,8 +24,8 @@ connection):
 | 48-52 | conn +0xe0 | `inaOnline` | console public IP as seen by the gateway |
 | 52-54 | conn +0xe4 | `wPortOnline` (big-endian) | console public UDP port as seen by the gateway |
 
-Before 2026-11-01 bytes 32-54 were zero, so every console advertised `inaOnline` 0.0.0.0:0 and the SGADDRs only
-differed by IP.
+Bytes 32-54 must not be zero: otherwise every console advertises `inaOnline` 0.0.0.0:0 and the SGADDRs differ only
+by IP.
 
 Peers send each other XNet traffic directly to `inaOnline:wPortOnline` (`FUN_8174a958`; same `inaOnline` = same LAN,
 use `ina`). For an online peer XAM also sends the key exchange through the gateway as message **0x1253**
@@ -31,7 +39,7 @@ The receiver (`FUN_81754c38`) takes a 0x1253 only on its primary connection, lon
 "SGADDR to" is its own SGADDR; it passes "from" on so it can answer the same way. The gateway relays a 0x1253 to the
 session whose SGADDR equals "to", with "from" overwritten by the sender's real SGADDR; unknown targets are dropped.
 
-## UDP (XAM 17559, static RE 2026-11-01)
+## UDP (XAM 17559, static RE)
 
 Data codes 4..6 are UDP: code = 4 + port mode (0: both ports 1000, 1: one byte each + 1000, 2: `u16` each,
 big-endian), the TCP datagram layout with a run of the ports alone (receive path `FUN_817551e0`):
