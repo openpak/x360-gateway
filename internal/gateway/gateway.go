@@ -95,7 +95,8 @@ type Gateway struct {
 
 	mu       sync.Mutex
 	sessions map[netip.AddrPort]*Session
-	outbox   []Datagram // datagrams for other sessions produced while handling one (relay)
+	online   map[uint64]*onlineUser // service-26 presence registry
+	outbox   []Datagram             // datagrams for other sessions produced while handling one (relay)
 }
 
 // Datagram is a packet for a given client.
@@ -164,6 +165,7 @@ func (g *Gateway) HandleAll(data []byte, src netip.AddrPort) []Datagram {
 	for _, d := range g.handle(data, src) {
 		all = append(all, Datagram{src, d})
 	}
+	g.reapStreams()
 	return append(all, g.outbox...)
 }
 

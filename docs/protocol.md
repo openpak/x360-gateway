@@ -51,3 +51,21 @@ itself), then the ciphertext. The only UDP XAM sends the gateway is arbitration 
 `FUN_81917ab0`): a whole HTTP/1.0 request in one datagram. The gateway proxies it like a tunnelled TCP request and
 answers with the HTTP response in one code-6 datagram from port 1000; XAM looks only for `200 OK` and `X-Err:` in
 it. UDP to any other port is dropped.
+
+## Friend presence on the service-26 stream (XAM 17559, static RE; untested on a console)
+
+In memory, one process. A user is online while the stream that carried its command 100 (body `u16 1 | XUID`, the
+XUID must be one of the session ticket's users) is open; the title id is the dashboard 0xFFFE07D1 (the gateway does
+not know the running title), state is `0x1`, the session XNKID is 0 (never joinable). Commands 102/103 add/remove
+watched XUIDs (records `u16 len | u16 1001 | u32 0 | u64 XUID`), remembered per stream with the request's flags
+(user-slot mask).
+
+- The 303 reply to a 102 carries one 56-byte record per watched friend that is online (the 305 stays empty).
+- When a user comes up, every other stream that watches it gets a command 500 push; when its stream goes away
+  (reset, close, session end or expiry) or its console is silent for `PresenceIdle`, an offline record (state 0,
+  title 0) is pushed. A reconnect on a new stream replaces the registry entry without an offline push.
+- Push frame: `u32 1 | 500 | 0 | flags | total | 0 | count`, then records `u16 56 | u16 1001 | u32 0 | u64 XUID |
+  u32 0 | u8[16] 0 | u32 title | u32 seconds since 2003-01-01 UTC | u8[8] XNKID | u32 state`. `flags` is the
+  watch mask of that XUID ANDed with the slots the stream registered with command 100 (the console's push mask).
+  The console never answers a push. Byte-exact vectors are in `internal/gateway/push_test.go`.
+- Offline pushes for silent consoles are sent by a 10 s sweep in `Server.Serve`.

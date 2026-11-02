@@ -60,6 +60,8 @@ type tcpConn struct {
 	responded              bool
 	resp                   []byte // response bytes; stream offset 0 is sequence iss+1
 	finQueued              bool
+	stream                 streamState // service-26 presence state
+	sess                   *Session
 }
 
 func (c *tcpConn) respEnd() uint32 { // stream offsets, FIN counted as one
@@ -68,6 +70,17 @@ func (c *tcpConn) respEnd() uint32 { // stream offsets, FIN counted as one
 		n++
 	}
 	return n
+}
+
+// segment seals one server segment of connection key with the next counter.
+func (s *Session) segment(key tcpKey, flags byte, seq, ack uint32, opts, payload []byte) []byte {
+	s.sendCtr++
+	sg := tcpSeg{SrcPort: key.server, DstPort: key.client, Seq: seq, Ack: ack, Off: 0x50, Flags: flags,
+		Window: svcWindow, Options: opts, Payload: payload}
+	if len(opts) > 0 {
+		sg.Off = 0x60
+	}
+	return sealTCP(s.s2c, s.ClientSPI, s.sendCtr, sg)
 }
 
 // tcpSegment handles one verified client segment and returns the datagrams to send.
@@ -82,13 +95,7 @@ func (g *Gateway) tcpSegment(s *Session, sg tcpSeg, now time.Time) [][]byte {
 	c := s.conns[key]
 	var out [][]byte
 	emit := func(flags byte, seq, ack uint32, opts, payload []byte) {
-		s.sendCtr++
-		sg := tcpSeg{SrcPort: key.server, DstPort: key.client, Seq: seq, Ack: ack, Off: 0x50, Flags: flags,
-			Window: svcWindow, Options: opts, Payload: payload}
-		if len(opts) > 0 {
-			sg.Off = 0x60
-		}
-		out = append(out, sealTCP(s.s2c, s.ClientSPI, s.sendCtr, sg))
+		out = append(out, s.segment(key, flags, seq, ack, opts, payload))
 		log.Info("tcp tx", "ports", fmt.Sprintf("%d>%d", key.server, key.client), "flags", fmt.Sprintf("%#02x", flags),
 			"seq", seq, "ack", ack, "len", len(payload), "ctr", s.sendCtr)
 	}
@@ -104,7 +111,7 @@ func (g *Gateway) tcpSegment(s *Session, sg tcpSeg, now time.Time) [][]byte {
 			var b [4]byte
 			rand.Read(b[:])
 			iss := binary.BigEndian.Uint32(b[:])
-			c = &tcpConn{key: key, iss: iss, irs: sg.Seq, sndUna: iss, sndNxt: iss + 1, rcvNxt: sg.Seq + 1}
+			c = &tcpConn{key: key, sess: s, iss: iss, irs: sg.Seq, sndUna: iss, sndNxt: iss + 1, rcvNxt: sg.Seq + 1}
 			s.conns[key] = c
 		}
 		c.peerWindow = sg.Window

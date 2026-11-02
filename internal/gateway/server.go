@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"time"
 )
 
 // Server reads datagrams from one UDP socket and answers them inline.
@@ -18,6 +19,20 @@ func (s *Server) Serve(ctx context.Context, conn *net.UDPConn) error {
 	go func() {
 		<-ctx.Done()
 		conn.Close()
+	}()
+	go func() { // offline pushes for consoles that went silent
+		t := time.NewTicker(10 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				for _, d := range s.Gateway.Sweep() {
+					conn.WriteToUDPAddrPort(d.Data, d.To)
+				}
+			}
+		}
 	}()
 	buf := make([]byte, 65535)
 	for {

@@ -13,3 +13,7 @@
 - 2026-11-01: v0.9.6 UDP inside the secure channel (codes 4..6, ports-only run): an arbitration datagram to port
   1000 (HTTP request text) is proxied to the service backend and the HTTP response goes back as one datagram. TCP
   seal/open now share the run layout code.
+
+- 2026-11-02: v0.10.0 friend presence on the service-26 stream: users online by command 100, command 500 pushes
+  (online/offline) to the streams that watch them (commands 102/103), 303 replies carry the online friends. In memory;
+  title is always the dashboard; untested on a console.
