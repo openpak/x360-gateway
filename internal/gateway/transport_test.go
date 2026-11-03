@@ -183,20 +183,6 @@ func TestUpstreamDown(t *testing.T) {
 	}
 }
 
-func TestSmallBodyHex(t *testing.T) {
-	req := "POST /liveinfo/GetLiveConfig.ashx HTTP/1.0\r\nContent-Length: 8\r\n\r\n\x06\x00xenon\x00"
-	if got := smallBodyHex([]byte(req)); got != "060078656e6f6e00" {
-		t.Fatalf("got %q", got)
-	}
-	if got := smallBodyHex([]byte("GET / HTTP/1.0\r\n\r\n")); got != "" {
-		t.Fatalf("no body: %q", got)
-	}
-	big := "POST / HTTP/1.0\r\nContent-Length: 65\r\n\r\n" + strings.Repeat("a", 65)
-	if got := smallBodyHex([]byte(big)); got != "" {
-		t.Fatalf("big: %q", got)
-	}
-}
-
 func TestUserInfo0253(t *testing.T) {
 	f := newFake(t, "")
 	user := append([]byte{0x01 | 0x04 | 0x08}, 0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01) // flags, xuid LE

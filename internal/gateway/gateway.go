@@ -280,8 +280,7 @@ func (g *Gateway) data(pkt []byte, src netip.AddrPort, now time.Time) ([][]byte,
 	}
 	spi, m, err := open(s.c2s, pkt)
 	if err != nil {
-		// The datagram is ciphertext; keeping it lets an undecodable shape be studied offline.
-		g.log().Info("unverifiable data", "src", src, "account", s.Account, "len", len(pkt), "hex", hex.EncodeToString(pkt))
+		g.log().Info("unverifiable data", "src", src, "account", s.Account, "len", len(pkt))
 		return nil, err
 	}
 	// SPI byte 0 is the pad length (pad<<5: the console's 0x80/0x40/0x20 are 4/2/1
@@ -347,7 +346,7 @@ func (g *Gateway) tcpData(s *Session, pkt []byte, src netip.AddrPort, now time.T
 		}
 	}
 	if err != nil {
-		g.log().Info("unverifiable data", "src", src, "account", s.Account, "len", len(pkt), "hex", hex.EncodeToString(pkt))
+		g.log().Info("unverifiable data", "src", src, "account", s.Account, "len", len(pkt))
 		return nil, err
 	}
 	s.expires = now.Add(SessionTTL)

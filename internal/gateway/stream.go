@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 )
 
 // streamPort is Live service 26, a long-lived TCP stream the console's XLive
@@ -39,7 +38,7 @@ func (g *Gateway) streamServe(c *tcpConn, log interface{ Info(string, ...any) })
 		msg := c.req[:total]
 		c.req = c.req[total:]
 		cmd := binary.LittleEndian.Uint32(msg[4:])
-		log.Info("stream message", "cmd", cmd, "id", binary.LittleEndian.Uint32(msg[8:]), "len", total, "hex", hex.EncodeToString(msg))
+		log.Info("stream message", "cmd", cmd, "id", binary.LittleEndian.Uint32(msg[8:]), "len", total)
 		if cmd < 100 || cmd > 105 {
 			continue
 		}

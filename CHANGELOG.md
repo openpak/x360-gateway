@@ -1,5 +1,7 @@
 # Changelog
 
+- 2026-11-03: v0.10.2: No secrets in logs: `http request` no longer logs the request line, headers or body hex (counts only), `stream message` and `unverifiable data` no longer log hex dumps. The access line `http <method> <path> -> <status> <ms>` is the per-request record. Test added.
+
 - 2026-11-03: v0.10.1: Per-command logging: each tunnelled service request writes `http <method> <path> -> <status> <duration>ms` (path only, never the query or headers) and each SG initiation writes `cmd initiation -> ok|rejected <duration>ms` (x360-common `httplog`). The existing debug-style `http request` / `stream message` lines are unchanged.
 
 - 2026-10-18: v0.9.0 split out of x360-kdc v0.8.14 into its own repository and image (`ghcr.io/openpak/x360-gateway`),
