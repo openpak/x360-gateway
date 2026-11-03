@@ -10,6 +10,7 @@
 package gateway
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/binary"
@@ -77,12 +78,15 @@ type Session struct {
 
 // Gateway is the protocol as a function from datagram to replies.
 type Gateway struct {
-	TicketKey    []byte         // the KDC's ticket key, 16 bytes
-	AccountsPath string         // the KDC's account store, re-read on every initiation
-	CA           *rsa.PublicKey // console CA: stored certificates must still verify
-	Now          func() time.Time
-	Log          *slog.Logger
-	Rand         io.Reader // default crypto/rand
+	TicketKey    []byte // the KDC's ticket key, 16 bytes
+	AccountsPath string // the KDC's account file (tests), re-read on every initiation
+	// Accounts is the KDC's account store in Postgres, reloaded on every initiation;
+	// when set it replaces AccountsPath. If a reload fails the last loaded accounts are used.
+	Accounts *kdc.Store
+	CA       *rsa.PublicKey // console CA: stored certificates must still verify
+	Now      func() time.Time
+	Log      *slog.Logger
+	Rand     io.Reader // default crypto/rand
 	// Handlers maps a message type to its handler; nil uses DefaultHandlers.
 	Handlers map[uint16]Handler
 	// ServiceURL is the backend the TCP service transport proxies HTTP requests to.
@@ -205,12 +209,24 @@ func (g *Gateway) handle(data []byte, src netip.AddrPort) [][]byte {
 	return out
 }
 
+func (g *Gateway) accountStore() (*kdc.Store, error) {
+	if g.Accounts == nil {
+		return kdc.OpenStore(g.AccountsPath)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := g.Accounts.Reload(ctx); err != nil {
+		g.log().Warn("accounts reload failed, using the last loaded accounts", "err", err.Error())
+	}
+	return g.Accounts, nil
+}
+
 func (g *Gateway) initiate(data []byte, src netip.AddrPort, now time.Time) ([]byte, error) {
 	in, err := parseInitiation(data)
 	if err != nil {
 		return nil, err
 	}
-	accounts, err := kdc.OpenStore(g.AccountsPath) // read-only; refreshes accounts the KDC issued meanwhile
+	accounts, err := g.accountStore() // read-only; refreshes accounts the KDC issued meanwhile
 	if err != nil {
 		return nil, fmt.Errorf("accounts: %w", err)
 	}

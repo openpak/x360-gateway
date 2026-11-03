@@ -41,11 +41,14 @@ func main() {
 		log.Error("ticket key", "path", cfg.TicketKey, "err", err, "len", len(ticketKey))
 		os.Exit(2)
 	}
-	store, err := kdc.OpenStore(cfg.Accounts)
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	store, err := kdc.OpenPGStore(dbCtx, os.Getenv("X360_GATEWAY_DATABASE_URL"), kdc.Schema, cfg.Accounts)
+	dbCancel()
 	if err != nil {
-		log.Error("accounts", "err", err)
+		log.Error("accounts: X360_GATEWAY_DATABASE_URL is required and must be reachable", "err", err)
 		os.Exit(2)
 	}
+	defer store.Close()
 	addr, err := net.ResolveUDPAddr("udp4", cfg.Addr)
 	if err != nil {
 		log.Error("address", "err", err)
@@ -59,7 +62,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	log.Info("x360-gateway listening", "addr", conn.LocalAddr(), "accounts", store.Len(), "service_url", cfg.ServiceURL, "service_urls", cfg.ServiceURLs, "debug", cfg.Debug)
-	g := &gateway.Gateway{TicketKey: ticketKey, AccountsPath: cfg.Accounts, CA: ca, Now: time.Now, Log: log, ServiceURL: cfg.ServiceURL, ServiceURLs: cfg.ServiceURLs, GatewayKey: os.Getenv("X360_GATEWAY_KEY")}
+	g := &gateway.Gateway{TicketKey: ticketKey, Accounts: store, CA: ca, Now: time.Now, Log: log, ServiceURL: cfg.ServiceURL, ServiceURLs: cfg.ServiceURLs, GatewayKey: os.Getenv("X360_GATEWAY_KEY")}
 	// Presence: users signed in on a live session are online in the account
 	// core (namespace xbox360). The core URL/token are the KDC's (same env file).
 	if u, tok := os.Getenv("X360_KDC_ACCOUNT_CORE_URL"), os.Getenv("X360_KDC_ACCOUNT_CORE_TOKEN"); u != "" && tok != "" {

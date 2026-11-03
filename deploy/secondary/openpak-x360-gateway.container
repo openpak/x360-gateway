@@ -28,6 +28,8 @@ Environment=X360_GATEWAY_SERVICE_URL=http://145.241.199.19
 Environment=X360_GATEWAY_DEBUG=true
 # Presence (namespace xbox360) in the account core: same core URL/token as the KDC.
 EnvironmentFile=%h/openpak/deploy/x360-kdc/core.env
+# db.env: X360_GATEWAY_DATABASE_URL (see openpak-x360-kdc.container). Mode 0600, never committed.
+EnvironmentFile=%h/openpak/deploy/x360-kdc/db.env
 
 [Service]
 Restart=always
