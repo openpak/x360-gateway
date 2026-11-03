@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openpak/x360-common/httplog"
 	"github.com/openpak/x360-common/kdc"
 	"github.com/openpak/x360-common/rc4hmac"
 )
@@ -182,6 +183,14 @@ func (g *Gateway) handle(data []byte, src netip.AddrPort) [][]byte {
 	kind := "data"
 	if len(data) >= 4 && [4]byte(data[:4]) == [4]byte{} {
 		kind = "initiation"
+		start := time.Now()
+		defer func() {
+			result := "ok"
+			if err != nil {
+				result = "rejected"
+			}
+			httplog.Command("initiation", result, start)
+		}()
 		var reply []byte
 		reply, err = g.initiate(data, src, now)
 		if reply != nil {

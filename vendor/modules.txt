@@ -3,6 +3,7 @@
 github.com/openpak/x360-common/accountcore
 github.com/openpak/x360-common/config
 github.com/openpak/x360-common/der
+github.com/openpak/x360-common/httplog
 github.com/openpak/x360-common/kdc
 github.com/openpak/x360-common/rc4hmac
 github.com/openpak/x360-common/wire

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openpak/x360-common/httplog"
 	"github.com/openpak/x360-common/kdc"
 	"github.com/openpak/x360-common/wire"
 )
@@ -269,12 +270,14 @@ func smallBodyHex(raw []byte) string {
 // serve proxies the raw HTTP request to the service backend and returns the
 // raw HTTP response (always well formed, 502/503 when the backend is not reachable).
 func (g *Gateway) serve(raw []byte, port uint16, account, users string, log interface{ Info(string, ...any) }) []byte {
+	start := time.Now()
 	reqLine, _, _ := strings.Cut(string(raw), "\r\n")
 	head, _, _ := strings.Cut(string(raw), "\r\n\r\n")
 	log.Info("http request", "port", port, "line", reqLine, "headers", strings.ReplaceAll(head, "\r\n", " | "), "bytes", len(raw),
 		"body_hex", smallBodyHex(raw))
 	status, hdr, body := g.upstream(raw, port, account, users)
 	resp := buildResponse(status, hdr, body)
+	logRelayed(reqLine, status, start)
 	log.Info("http response", "status", status, "body_len", len(body), "bytes", len(resp))
 	return resp
 }
@@ -371,4 +374,18 @@ func (g *Gateway) serviceURL(port uint16) string {
 		return u
 	}
 	return g.ServiceURL
+}
+
+// logRelayed writes the one-line access record (method, path without query, status, duration) for a
+// request the tunnel relayed to a service backend.
+func logRelayed(reqLine, status string, start time.Time) {
+	f := strings.Fields(reqLine)
+	if len(f) < 2 {
+		return
+	}
+	code := 0
+	if sf := strings.Fields(status); len(sf) > 0 {
+		code, _ = strconv.Atoi(sf[0])
+	}
+	httplog.Print(f[0], f[1], code, start)
 }
