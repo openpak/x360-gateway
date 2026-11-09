@@ -8,7 +8,9 @@ package gateway
 // reply to a watch carries the watched friends that are online right now.
 
 import (
+	"bytes"
 	"encoding/binary"
+	"strings"
 	"time"
 )
 
@@ -17,6 +19,8 @@ const (
 	presenceRecord = 56         // 20-byte sub-header + 36-byte type 1001 payload
 	xbox2003       = 1041379200 // unix time of 2003-01-01 00:00 UTC, the console's presence epoch
 	statePresent   = 0x1
+	statePlaying   = 0x2  // [I SDK name]
+	stateJoinable  = 0x10 // FUN_8172c228 turns it into the friend's joinable flag
 	cmdPush        = 500
 	typePresence   = 1001
 )
@@ -34,6 +38,8 @@ type onlineUser struct {
 	c     *tcpConn
 	title uint32
 	since time.Time
+	kid   [8]byte // the Live session this user hosts (XNKID), zero when none
+	state uint32
 }
 
 // presenceFrame is a command 500 push; every record is a 56-byte type 1001 record.
@@ -45,8 +51,8 @@ func presenceFrame(flags uint32, recs []byte) []byte {
 	return append(f, recs...)
 }
 
-// presenceRec is one type 1001 record: xuid, title id, time (seconds since 2003), state flags.
-func presenceRec(xuid uint64, title uint32, t time.Time, state uint32) []byte {
+// presenceRec is one type 1001 record: xuid, title id, time (seconds since 2003), session XNKID, state flags.
+func presenceRec(xuid uint64, title uint32, t time.Time, kid [8]byte, state uint32) []byte {
 	r := binary.LittleEndian.AppendUint16(nil, presenceRecord)
 	r = binary.LittleEndian.AppendUint16(r, typePresence)
 	r = binary.LittleEndian.AppendUint32(r, 0) // listener key
@@ -55,7 +61,7 @@ func presenceRec(xuid uint64, title uint32, t time.Time, state uint32) []byte {
 	r = append(r, make([]byte, 16)...)         // gamertag slot, unused
 	r = binary.LittleEndian.AppendUint32(r, title)
 	r = binary.LittleEndian.AppendUint32(r, uint32(t.Unix()-xbox2003))
-	r = append(r, make([]byte, 8)...) // session XNKID: none known
+	r = append(r, kid[:]...) // session XNKID
 	return binary.LittleEndian.AppendUint32(r, state)
 }
 
@@ -85,10 +91,14 @@ func (g *Gateway) streamLogon(c *tcpConn, msg []byte) {
 	}
 	prev := g.online[xuid]
 	now := g.now()
-	g.online[xuid] = &onlineUser{s: s, c: c, title: dashboardTitle, since: now}
+	u := &onlineUser{s: s, c: c, title: dashboardTitle, since: now, state: statePresent}
+	if prev != nil && prev.s == s { // a reconnect keeps what the console hosts
+		u.title, u.kid, u.state = prev.title, prev.kid, prev.state
+	}
+	g.online[xuid] = u
 	c.stream.users = append(c.stream.users, xuid)
 	if prev == nil {
-		g.pushPresence(xuid, dashboardTitle, now, statePresent)
+		g.pushPresence(xuid, u.title, now, u.kid, u.state)
 	}
 }
 
@@ -102,7 +112,7 @@ func (g *Gateway) streamWatch(c *tcpConn, msg []byte) []byte {
 	for _, x := range watchXUIDs(msg) {
 		c.stream.watch[x] |= flags
 		if o := g.online[x]; o != nil {
-			out = append(out, presenceRec(x, o.title, o.since, statePresent)...)
+			out = append(out, presenceRec(x, o.title, o.since, o.kid, o.state)...)
 		}
 	}
 	return out
@@ -131,8 +141,8 @@ func watchXUIDs(msg []byte) []uint64 {
 }
 
 // pushPresence sends xuid's state to every open stream that watches it.
-func (g *Gateway) pushPresence(xuid uint64, title uint32, t time.Time, state uint32) {
-	rec := presenceRec(xuid, title, t, state)
+func (g *Gateway) pushPresence(xuid uint64, title uint32, t time.Time, kid [8]byte, state uint32) {
+	rec := presenceRec(xuid, title, t, kid, state)
 	for _, s := range g.sessions {
 		for _, c := range s.conns {
 			if c.key.server != streamPort || !c.established || !c.responded {
@@ -176,7 +186,7 @@ func (g *Gateway) reapStreams() {
 			continue
 		}
 		delete(g.online, x)
-		g.pushPresence(x, 0, now, 0)
+		g.pushPresence(x, 0, now, [8]byte{}, 0)
 	}
 }
 
@@ -192,4 +202,79 @@ func (g *Gateway) Sweep() []Datagram {
 	}
 	g.reapStreams()
 	return g.outbox
+}
+
+// Host sessions. A console hosting a Live session tells matchmaking (Live
+// service 6, xmatchhost2.ashx), not presence; on Live the presence service
+// links the two, so friends see the host joinable in its title and their
+// console can look the session up by its XNKID. The gateway relays those
+// requests and applies them to the hosting console's online users.
+
+const (
+	hostNone = iota
+	hostCreate
+	hostModify
+	hostDelete
+)
+
+// hostSessionUpdate reads a relayed request and its response: XRL 0x100 create
+// (request u32 len | XNKID | u32 title | ..., reply XNKID | XNKEY), 0x101 modify
+// (same request, the existing XNKID, no reply) and 0x102 delete (u32 | XNKID |
+// u32). Only 200 replies count.
+func hostSessionUpdate(req, resp []byte) (kind int, title uint32, kid [8]byte) {
+	line, _, _ := bytes.Cut(req, []byte("\r\n"))
+	_, reqBody, ok := bytes.Cut(req, []byte("\r\n\r\n"))
+	status, respBody, ok2 := bytes.Cut(resp, []byte("\r\n\r\n"))
+	if !ok || !ok2 || !bytes.Contains(status, []byte(" 200 ")) || len(reqBody) < 12 {
+		return hostNone, 0, kid
+	}
+	f := strings.Fields(string(line))
+	if len(f) < 2 {
+		return hostNone, 0, kid
+	}
+	path, _, _ := strings.Cut(strings.ToLower(f[1]), "?")
+	switch path {
+	case "/xmatch/xmatchhost2.ashx":
+		if len(reqBody) < 16 {
+			return hostNone, 0, kid
+		}
+		title = binary.LittleEndian.Uint32(reqBody[12:])
+		if len(respBody) >= 24 { // create: the server's XNKID
+			copy(kid[:], respBody[:8])
+			return hostCreate, title, kid
+		}
+		copy(kid[:], reqBody[4:12])
+		return hostModify, title, kid
+	case "/xmatch/xmatchhostdelete2.ashx":
+		copy(kid[:], reqBody[4:12])
+		return hostDelete, 0, kid
+	}
+	return hostNone, 0, kid
+}
+
+// noteHostSession applies a relayed host request to session s's online users.
+func (g *Gateway) noteHostSession(s *Session, req, resp []byte) {
+	kind, title, kid := hostSessionUpdate(req, resp)
+	if kind == hostNone {
+		return
+	}
+	now := g.now()
+	for xuid, o := range g.online {
+		if o.s != s {
+			continue
+		}
+		switch kind {
+		case hostCreate, hostModify:
+			if o.kid == kid && o.title == title {
+				continue
+			}
+			o.title, o.kid, o.state = title, kid, statePresent|statePlaying|stateJoinable
+		case hostDelete:
+			if o.kid != kid {
+				continue
+			}
+			o.kid, o.state = [8]byte{}, statePresent|statePlaying
+		}
+		g.pushPresence(xuid, o.title, now, o.kid, o.state)
+	}
 }

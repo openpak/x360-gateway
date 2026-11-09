@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"net/netip"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -23,10 +24,10 @@ const (
 func TestPresenceFrames(t *testing.T) {
 	when := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
 	x := uint64(0x0009000000ABCDEF)
-	if got := hex.EncodeToString(presenceFrame(1, presenceRec(x, 0x4D5307E6, when, 1))); got != pushOnlineHex {
+	if got := hex.EncodeToString(presenceFrame(1, presenceRec(x, 0x4D5307E6, when, [8]byte{}, 1))); got != pushOnlineHex {
 		t.Fatalf("online %s", got)
 	}
-	if got := hex.EncodeToString(presenceFrame(1, presenceRec(x, 0, when, 0))); got != pushOfflineHex {
+	if got := hex.EncodeToString(presenceFrame(1, presenceRec(x, 0, when, [8]byte{}, 0))); got != pushOfflineHex {
 		t.Fatalf("offline %s", got)
 	}
 }
@@ -89,7 +90,7 @@ func TestPresenceFanOut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := presenceFrame(1, presenceRec(ann, dashboardTitle, now, 1))
+	want := presenceFrame(1, presenceRec(ann, dashboardTitle, now, [8]byte{}, 1))
 	if !bytes.Equal(sg.Payload, want) || sg.Seq != 101 || sg.Ack != 5 {
 		t.Fatalf("push %x seq %d", sg.Payload, sg.Seq)
 	}
@@ -115,11 +116,96 @@ func TestPresenceFanOut(t *testing.T) {
 			continue
 		}
 		sg, _ := openTCP(sb.s2c, d.Data, 0)
-		if !bytes.Equal(sg.Payload, presenceFrame(1, presenceRec(ann, 0, now, 0))) {
+		if !bytes.Equal(sg.Payload, presenceFrame(1, presenceRec(ann, 0, now, [8]byte{}, 0))) {
 			t.Fatalf("offline push %x", sg.Payload)
 		}
 	}
 	if g.online[ann] != nil || g.online[bob] == nil {
 		t.Fatal("registry")
+	}
+}
+
+func httpPost(path string, body []byte) []byte {
+	return append([]byte("POST "+path+" HTTP/1.1\r\nHost: xmatch\r\nContent-Length: "+strconv.Itoa(len(body))+"\r\n\r\n"), body...)
+}
+
+func httpReply(body []byte) []byte {
+	return append([]byte("HTTP/1.1 200 OK\r\nContent-Length: "+strconv.Itoa(len(body))+"\r\n\r\n"), body...)
+}
+
+// hostBody is an xmatchhost2 request: u32 len | XNKID | u32 title | XNADDR ... (only the head matters here).
+func hostBody(kid [8]byte, title uint32) []byte {
+	b := binary.LittleEndian.AppendUint32(nil, 0x90)
+	b = append(b, kid[:]...)
+	b = binary.LittleEndian.AppendUint32(b, title)
+	return append(b, make([]byte, 52)...)
+}
+
+func TestHostSessionUpdate(t *testing.T) {
+	fresh := [8]byte{0x90}
+	server := [8]byte{0x90, 0x39, 0x20, 0x4C, 0x44, 0xAE, 0x8C, 0x6E}
+	kind, title, kid := hostSessionUpdate(httpPost("/xmatch/xmatchhost2.ashx", hostBody(fresh, 0x584111F7)),
+		httpReply(append(server[:], make([]byte, 16)...)))
+	if kind != hostCreate || title != 0x584111F7 || kid != server {
+		t.Fatalf("create %d %08x %x", kind, title, kid)
+	}
+	kind, _, kid = hostSessionUpdate(httpPost("/xmatch/xmatchhost2.ashx", hostBody(server, 0x584111F7)), httpReply(nil))
+	if kind != hostModify || kid != server {
+		t.Fatalf("modify %d %x", kind, kid)
+	}
+	del := append(append([]byte{0, 0, 0, 0}, server[:]...), 0, 0, 0, 0)
+	kind, _, kid = hostSessionUpdate(httpPost("/xmatch/xmatchhostdelete2.ashx", del), httpReply(nil))
+	if kind != hostDelete || kid != server {
+		t.Fatalf("delete %d %x", kind, kid)
+	}
+	if k, _, _ := hostSessionUpdate(httpPost("/xmatch/xmatchclient2.ashx", hostBody(server, 1)), httpReply(nil)); k != hostNone {
+		t.Fatal("search counted")
+	}
+	failed := []byte("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n")
+	if k, _, _ := hostSessionUpdate(httpPost("/xmatch/xmatchhost2.ashx", hostBody(fresh, 1)), failed); k != hostNone {
+		t.Fatal("failed create counted")
+	}
+}
+
+// A friend who hosts a Live session is pushed joinable in its title with the session XNKID.
+func TestPresenceHostJoinable(t *testing.T) {
+	now := time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC)
+	g := &Gateway{Now: func() time.Time { return now }, sessions: map[netip.AddrPort]*Session{}}
+	log := slog.New(slog.NewTextHandler(&strings.Builder{}, nil))
+	const ann, bob = 0x0009000000000001, 0x0009000000000002
+	sa, ca := pushStreamConn(g, "203.0.113.5:3074", 0x11, ann)
+	sb, cb := pushStreamConn(g, "198.51.100.7:51000", 0x22, bob)
+	ca.req = streamMsg(100, 1, logonBody(ann))
+	g.streamServe(ca, log)
+	cb.req = append(streamMsg(100, 1, logonBody(bob)), streamMsg(102, 1, watchBody(ann))...)
+	g.streamServe(cb, log)
+	cb.resp = nil
+	cb.sndNxt = cb.sndUna
+	g.outbox = nil
+
+	server := [8]byte{0x90, 1, 2, 3, 4, 5, 6, 7}
+	g.noteHostSession(sa, httpPost("/xmatch/xmatchhost2.ashx", hostBody([8]byte{0x90}, 0x584111F7)),
+		httpReply(append(server[:], make([]byte, 16)...)))
+	if len(g.outbox) != 1 || g.outbox[0].To != sb.Client {
+		t.Fatalf("outbox %+v", g.outbox)
+	}
+	sg, err := openTCP(sb.s2c, g.outbox[0].Data, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := presenceFrame(1, presenceRec(ann, 0x584111F7, now, server, statePresent|statePlaying|stateJoinable))
+	if !bytes.Equal(sg.Payload, want) {
+		t.Fatalf("push %x", sg.Payload)
+	}
+	// The same session modified again pushes nothing; deleting it drops joinable.
+	g.outbox = nil
+	g.noteHostSession(sa, httpPost("/xmatch/xmatchhost2.ashx", hostBody(server, 0x584111F7)), httpReply(nil))
+	if len(g.outbox) != 0 {
+		t.Fatal("unchanged modify pushed")
+	}
+	del := append(append([]byte{0, 0, 0, 0}, server[:]...), 0, 0, 0, 0)
+	g.noteHostSession(sa, httpPost("/xmatch/xmatchhostdelete2.ashx", del), httpReply(nil))
+	if o := g.online[ann]; o == nil || o.kid != [8]byte{} || o.state != statePresent|statePlaying || len(g.outbox) != 1 {
+		t.Fatalf("after delete %+v outbox %d", o, len(g.outbox))
 	}
 }

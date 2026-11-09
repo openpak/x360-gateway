@@ -187,6 +187,7 @@ func (g *Gateway) tcpSegment(s *Session, sg tcpSeg, now time.Time) [][]byte {
 	} else if !c.responded && requestComplete(c.req) {
 		c.responded = true
 		c.resp = g.serve(c.req, key.server, s.Account, usersHeader(s.Users), log)
+		g.noteHostSession(s, c.req, c.resp)
 		c.finQueued = true
 	}
 	if needAck {

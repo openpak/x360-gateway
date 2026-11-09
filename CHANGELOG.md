@@ -1,5 +1,10 @@
 # Changelog
 
+- 2026-11-09: v0.12.0: Friends see a hosted game. When a console's `xmatchhost2.ashx` create/modify (Live service 6) is relayed
+  with a 200, its online users are pushed (command 500, and in later 303 snapshots) in the session's title with the session
+  XNKID and state online|playing|joinable (0x13); `xmatchhostdelete2.ashx` drops joinable again. Before, every friend was in
+  the dashboard title with XNKID 0, so a friend's game never showed in a title's join list (Minecraft, card #163).
+
 - 2026-11-04: v0.11.1: x360-common v0.8.0 (re-vendored). Account erasure of card #120 needs no endpoint here: the gateway only reads the KDC's `x360_kdc` accounts and reloads them on every initiation, so an account erased through x360-kdc (v0.11.0) is gone from the gateway on the next initiation.
 
 - 2026-11-03: v0.11.0: Accounts are read from Postgres (the KDC's schema `x360_kdc`, `X360_GATEWAY_DATABASE_URL`, required), reloaded on every initiation; if a reload fails the last loaded accounts are used and a warning is logged. x360-common v0.6.0.

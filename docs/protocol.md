@@ -55,8 +55,12 @@ it. UDP to any other port is dropped.
 ## Friend presence on the service-26 stream (XAM 17559, static RE; untested on a console)
 
 In memory, one process. A user is online while the stream that carried its command 100 (body `u16 1 | XUID`, the
-XUID must be one of the session ticket's users) is open; the title id is the dashboard 0xFFFE07D1 (the gateway does
-not know the running title), state is `0x1`, the session XNKID is 0 (never joinable). Commands 102/103 add/remove
+XUID must be one of the session ticket's users) is open; the title id is the dashboard 0xFFFE07D1 and the state `0x1`
+until the console hosts a Live session. A relayed `xmatchhost2.ashx` create (reply `XNKID | XNKEY`) or modify that
+answers 200 sets the console's online users to the request's title (`u32` at body offset 12), the session XNKID
+(the reply's for a create, body offset 4 for a modify) and state `0x13` (online, playing, joinable: XAM's
+FUN_8172c228 turns `0x10` into the friend's joinable flag); `xmatchhostdelete2.ashx` (XNKID at body offset 4)
+clears the XNKID and leaves state `0x3`. Each change is pushed to the watchers. Commands 102/103 add/remove
 watched XUIDs (records `u16 len | u16 1001 | u32 0 | u64 XUID`), remembered per stream with the request's flags
 (user-slot mask).
 
