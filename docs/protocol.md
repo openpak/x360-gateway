@@ -20,9 +20,13 @@ connection):
 
 | core bytes | XAM field | XNADDR field | gateway fills |
 | --- | --- | --- | --- |
-| 28-48 | conn +0xcc | `abOnline` (SGADDR: ina, spi, xbox id, reserved) | console IP, server SPI, zeros |
+| 28-48 | conn +0xcc | `abOnline` (SGADDR: ina, spi, xbox id, reserved) | console IP, server SPI, zero id, reserved `01 00 00 00` |
 | 48-52 | conn +0xe0 | `inaOnline` | console public IP as seen by the gateway |
 | 52-54 | conn +0xe4 | `wPortOnline` (big-endian) | console public UDP port as seen by the gateway |
+
+SGADDR byte 16 is XNADDR byte 0x20. XAM's own XNADDR (`FUN_8174ac90`) sets it to 1 and takes it from the SGADDR once
+online; the key-exchange receiver (`FUN_81753590`) drops an online peer's initiation (0xa58) whose byte 0x20 is 0, and
+2 means the peer only takes the AES forms (0xe58/0x1058). The gateway sends 1.
 
 Bytes 32-54 must not be zero: otherwise every console advertises `inaOnline` 0.0.0.0:0 and the SGADDRs differ only
 by IP.

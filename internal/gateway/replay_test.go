@@ -299,7 +299,8 @@ func TestReplayReply(t *testing.T) {
 			t.Fatalf("%s: core/tail differ from the accepted reply\nours %x\nsaved %x", dir, tail, savedTail)
 		}
 		// SGADDR spi and the public address (XNADDR inaOnline, wPortOnline big-endian).
-		if !bytes.Equal(tail[4:8], params.spi) || !bytes.Equal(tail[20:26], []byte{10, 0, 2, 15, 0x0c, 0x02}) {
+		// Byte 16 is XNADDR byte 0x20: XAM drops an online key-exchange initiation when it is 0.
+		if !bytes.Equal(tail[4:8], params.spi) || tail[16] != 1 || !bytes.Equal(tail[20:26], []byte{10, 0, 2, 15, 0x0c, 0x02}) {
 			t.Fatalf("%s: SGADDR/public address in tail %x", dir, tail)
 		}
 		if shape := func(b []byte) string { return hex.EncodeToString(b[:4]) }; shape(rep) != shape(saved) {

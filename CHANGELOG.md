@@ -1,5 +1,10 @@
 # Changelog
 
+- 2026-11-09: v0.12.1: Peers can key-exchange. The SGADDR in the reply core (XNADDR `abOnline`) now carries reserved byte
+  `01` (XNADDR byte 0x20, XAM's own default). With 0 there the host's XAM dropped every online key-exchange initiation
+  (0xa58, relayed as 0x1253), so a joiner never got a security association (Minecraft join, card #163). Consoles pick the
+  new SGADDR up at their next sign-in.
+
 - 2026-11-09: v0.12.0: Friends see a hosted game. When a console's `xmatchhost2.ashx` create/modify (Live service 6) is relayed
   with a 200, its online users are pushed (command 500, and in later 303 snapshots) in the session's title with the session
   XNKID and state online|playing|joinable (0x13); `xmatchhostdelete2.ashx` drops joinable again. Before, every friend was in

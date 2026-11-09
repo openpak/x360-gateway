@@ -248,9 +248,7 @@ func (g *Gateway) initiate(data []byte, src netip.AddrPort, now time.Time) ([]by
 	}
 	sess := &Session{Client: src, Kind: v.client, Account: v.name, Users: v.users, ClientSPI: append([]byte{}, in.clientSPI...),
 		ServerSPI: p.spi, c2s: c2s, s2c: s2c, expires: now.Add(SessionTTL), lastSeen: now}
-	ip := src.Addr().As4()
-	copy(sess.SGAddr[0:4], ip[:])
-	copy(sess.SGAddr[4:8], p.spi)
+	sess.SGAddr = sgAddr(src.Addr().As4(), p.spi)
 	g.sessions[src] = sess
 	g.log().Info("authenticated", "src", src, "account", v.name, "chunks", fmt.Sprintf("%#x", in.chunks),
 		"client_spi", hex.EncodeToString(in.clientSPI), "server_spi", hex.EncodeToString(p.spi),

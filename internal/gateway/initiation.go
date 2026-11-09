@@ -300,6 +300,17 @@ func keyMaterial(key, shared, cnonce, snonce []byte) []byte {
 	return m
 }
 
+// sgAddr is the console's SGADDR: ina, spi, xbox id (zero), reserved. XAM's own XNADDR
+// (FUN_8174ac90) defaults byte 0x20, reserved[0] here, to 1 and overwrites it with this
+// SGADDR once online; its key-exchange receiver (FUN_81753590) drops an online peer's
+// initiation whose byte 0x20 is 0, and 2 would demand the AES message forms.
+func sgAddr(ip [4]byte, spi []byte) (a [20]byte) {
+	copy(a[0:4], ip[:])
+	copy(a[4:8], spi)
+	a[16] = 1
+	return a
+}
+
 // replyParams are the server's random choices, injectable for tests.
 type replyParams struct {
 	private *big.Int // DH private
@@ -327,8 +338,8 @@ func (in *initiation) reply(v *verified, client netip.AddrPort, p replyParams) (
 	// Peers reach the console directly at [48:54] and through the gateway by its SGADDR
 	// (0x1253 relay), so the server SPI in [32:36] makes the SGADDR unique per session.
 	ip := client.Addr().As4()
-	copy(core[28:32], ip[:])
-	copy(core[32:36], p.spi)
+	sg := sgAddr(ip, p.spi)
+	copy(core[28:48], sg[:])
 	copy(core[48:52], ip[:])
 	binary.BigEndian.PutUint16(core[52:], client.Port())
 	binary.LittleEndian.PutUint16(core[54:], lifetimeA)

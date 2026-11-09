@@ -11,9 +11,7 @@ func relaySession(t *testing.T, addr string, spi byte, seed byte) *Session {
 	c2s, s2c := derive(bytes.Repeat([]byte{seed}, 100))
 	s := &Session{Client: netip.MustParseAddrPort(addr), ClientSPI: []byte{0, 1, 2, seed}, ServerSPI: []byte{0, 9, 9, spi},
 		c2s: c2s, s2c: s2c, expires: time.Now().Add(time.Hour)}
-	ip := s.Client.Addr().As4()
-	copy(s.SGAddr[:4], ip[:])
-	copy(s.SGAddr[4:], s.ServerSPI)
+	s.SGAddr = sgAddr(s.Client.Addr().As4(), s.ServerSPI)
 	return s
 }
 
@@ -41,5 +39,15 @@ func TestRelay(t *testing.T) {
 	copy(body[20:40], bytes.Repeat([]byte{1}, 20))
 	if out := g.HandleAll(seal(a.c2s, a.ServerSPI, 2, TypeRelay, body), a.Client); len(out) != 0 {
 		t.Fatalf("unknown target relayed: %+v", out)
+	}
+}
+
+// XNADDR byte 0x20 (SGADDR reserved[0]) must be 1: XAM drops an online key-exchange
+// initiation whose sender has 0 there.
+func TestSGAddrVersionByte(t *testing.T) {
+	a := sgAddr([4]byte{203, 0, 113, 5}, []byte{0, 9, 9, 1})
+	want := [20]byte{203, 0, 113, 5, 0, 9, 9, 1, 16: 1}
+	if a != want {
+		t.Fatalf("sgAddr %x", a)
 	}
 }
